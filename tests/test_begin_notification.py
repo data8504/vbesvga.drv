@@ -32,7 +32,7 @@ class BeginNotification(unittest.TestCase):
                              if instruction.mnemonic == 'lcall')
 
     def test_old_vdd_absent_pending_and_full_client_state(self):
-        for supported, pending in ((False, 0), (False, 1), (True, 0), (True, 1)):
+        for supported, pending in ((False, 0), (False, 1), (True, 0), (True, 1), (True, 2)):
             with self.subTest(supported=supported, timer_owned=pending):
                 machine = DRIVER.machine()
                 for index, register in enumerate(REGISTERS):
@@ -63,7 +63,7 @@ class BeginNotification(unittest.TestCase):
                 DRIVER.call(machine, 'dblbuf_revoke_timer')
                 self.assertEqual([machine.reg_read(register) for register in REGISTERS], expected)
                 self.assertEqual(machine.reg_read(UC_X86_REG_EFLAGS), flags)
-                self.assertEqual(len(calls), int(supported and pending))
+                self.assertEqual(len(calls), int(bool(supported and pending)))
 
     def test_setup_negotiates_opt_in_and_begin_independently(self):
         setup = DRIVER.function('setup_double_buf', 500)
@@ -175,7 +175,9 @@ class BeginNotification(unittest.TestCase):
         DRIVER.call(driver, 'dblbuf_complete_pending')
         self.assertEqual(events.count((0x28, 4, 0x684583)), 1)
         DRIVER.call(driver, 'dblbuf_begin_draw')
-        self.assertEqual(calls, [4, 3, 3], 'completed snapshot needs no next-begin cancellation')
+        self.assertEqual(calls, [4, 3, 3, 4], 'next begin consumes completed ownership')
+        self.assertEqual(events.count((0x28, 4, 0x684584)), 1,
+                         'completed snapshot survives the next begin')
 
 
 if __name__ == '__main__':

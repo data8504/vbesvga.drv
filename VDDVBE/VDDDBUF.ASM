@@ -71,6 +71,7 @@ Shared_Cursor_Data	STRUC
 	host_publish_enabled DW 0
 	publish_pending DW 0
 	; Only timer-owned snapshots are revocable at the next outer GDI begin.
+	; 0: unowned, 1: revocable timer, 2: completed text until next begin.
 	timer_snapshot_pending DW 0
 Shared_Cursor_Data	ENDS
 
@@ -145,6 +146,9 @@ BeginProc VDD_SwapBuffers,High_Freq
 	mov	[SharedCurSeg.publish_pending],0
 	call	VDD_PublishFrame
 	jnc	short @@done
+	; Refreshing completed pixels must not make them revocable again.
+	cmp	[SharedCurSeg.timer_snapshot_pending],2
+	je	short @@done
 	mov	[SharedCurSeg.timer_snapshot_pending],1
 @@done:
 	call	VDD_Schedule_SwapBuffers
@@ -354,7 +358,7 @@ BeginProc VDD_DblBuf_Complete, PUBLIC
 	je	short cp_done
 	call	VDD_PublishFrame
 	jnc	short cp_done
-	mov	[SharedCurSeg.timer_snapshot_pending],0
+	mov	[SharedCurSeg.timer_snapshot_pending],2
 cp_done:
 	popad
 	ret
@@ -380,7 +384,8 @@ pf_done:
 EndProc VDD_PublishFrame
 
 ; A new outer GDI draw supersedes an uncommitted timer snapshot. Completed-text
-; snapshots remain valid while the next drawing operation is underway.
+; ownership survives periodic refreshes until this first begin consumes it,
+; leaving the completed snapshot valid while the next operation is underway.
 BeginProc VDD_DblBuf_BeginDraw, PUBLIC
 	pushad
 	cmp	[SharedCurSeg.timer_snapshot_pending],0
@@ -393,6 +398,11 @@ BeginProc VDD_DblBuf_BeginDraw, PUBLIC
 	je	short bd_done
 	cmp	[Vid_SB_Timeout],0
 	je	short bd_done
+	cmp	[SharedCurSeg.timer_snapshot_pending],2
+	jne	short bd_cancel
+	mov	[SharedCurSeg.timer_snapshot_pending],0
+	jmp	short bd_done
+bd_cancel:
 	call	VDD_HostCancel
 	mov	[SharedCurSeg.publish_pending],1
 bd_done:

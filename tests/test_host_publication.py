@@ -212,7 +212,9 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
         for owned, depth, opted_in, used, running in (
                 (0, 1, 1, 1, 1), (1, 0, 1, 1, 1), (1, 2, 1, 1, 1),
                 (1, 1, 0, 1, 1), (1, 1, 1, 0, 1), (1, 1, 1, 1, 0),
-                (1, 1, 1, 1, 1)):
+                (1, 1, 1, 1, 1), (2, 0, 1, 1, 1), (2, 2, 1, 1, 1),
+                (2, 1, 0, 1, 1), (2, 1, 1, 0, 1), (2, 1, 1, 1, 0),
+                (2, 1, 1, 1, 1)):
             with self.subTest(owned=owned, depth=depth, opted_in=opted_in,
                               used=used, running=running):
                 machine = self.host_machine(opted_in, used, running)
@@ -220,11 +222,12 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
                 write_number(machine, self.active, depth)
                 device = IntegrationDevice(machine)
                 self.call_preserving_registers(machine, 'VDD_DblBuf_BeginDraw')
-                cancelled = bool(owned and depth == 1 and opted_in and used and running)
+                outer_begin = bool(depth == 1 and opted_in and used and running)
+                cancelled = owned == 1 and outer_begin
                 self.assertEqual(('out', 0x28, 4, 0x684584) in device.events, cancelled)
                 self.assertEqual(device.submissions(), 0)
                 self.assertEqual(read_number(machine, self.timer_pending),
-                                 0 if cancelled else owned)
+                                 0 if outer_begin else owned)
                 self.assertEqual(read_number(machine, self.pending), int(cancelled))
                 self.assertEqual(read_number(machine, self.used, 4), used)
 
@@ -248,14 +251,13 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
         write_number(machine, self.active, 0)
         IMAGE.call(machine, 'VDD_DblBuf_Complete')
         self.assertEqual(device.submissions(), 2)
-        self.assertEqual(read_number(machine, self.timer_pending), 0)
+        self.assertEqual(read_number(machine, self.timer_pending), 2)
         device.events.clear()
         write_number(machine, self.active, 1)
         IMAGE.call(machine, 'VDD_DblBuf_BeginDraw')
         self.assertEqual(device.events, [], 'completed-text snapshot survives next begin')
-        # A periodic B can replace completion-owned A before presentation.
-        # Its own tag must then permit revocation, and the following text C
-        # must retain a bounded path to a replacement complete frame.
+        # The first begin consumes completion ownership. A subsequent periodic
+        # snapshot belongs to the new drawing cycle and remains revocable.
         write_number(machine, self.active, 0)
         hook = machine.hook_add(UC_HOOK_CODE, scheduler_boundary)
         IMAGE.call(machine, 'VDD_SwapBuffers')
@@ -269,7 +271,43 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
         write_number(machine, self.active, 0)
         IMAGE.call(machine, 'VDD_DblBuf_Complete')
         self.assertEqual(device.submissions(), 2)
+        self.assertEqual(read_number(machine, self.timer_pending), 2)
+
+    def test_timer_refresh_does_not_revoke_completed_text(self):
+        machine = self.host_machine()
+        device = IntegrationDevice(machine)
+        write_number(machine, self.pending, 1)
+        IMAGE.call(machine, 'VDD_DblBuf_Complete')
+
+        def scheduler_boundary(cpu, address, size, unused):
+            if address == IMAGE.symbols['VDD_Schedule_SwapBuffers']:
+                cpu.emu_stop()
+
+        # Before presentation, periodic refreshes contain the same completed
+        # pixels. They must not make that completed position revocable again.
+        for unused in range(3):
+            hook = machine.hook_add(UC_HOOK_CODE, scheduler_boundary)
+            IMAGE.call(machine, 'VDD_SwapBuffers')
+            machine.hook_del(hook)
+        self.assertEqual(device.submissions(), 4)
+        device.events.clear()
+        write_number(machine, self.active, 1)
+        self.call_preserving_registers(machine, 'VDD_DblBuf_BeginDraw')
+        self.assertEqual(device.events, [], 'timer refresh must preserve completed text')
         self.assertEqual(read_number(machine, self.timer_pending), 0)
+        self.assertEqual(read_number(machine, self.pending), 0)
+
+        # After that first begin, a fresh timer snapshot is revocable normally.
+        write_number(machine, self.active, 0)
+        hook = machine.hook_add(UC_HOOK_CODE, scheduler_boundary)
+        IMAGE.call(machine, 'VDD_SwapBuffers')
+        machine.hook_del(hook)
+        self.assertEqual(read_number(machine, self.timer_pending), 1)
+        device.events.clear()
+        write_number(machine, self.active, 1)
+        self.call_preserving_registers(machine, 'VDD_DblBuf_BeginDraw')
+        self.assertIn(('out', 0x28, 4, 0x684584), device.events)
+        self.assertEqual(read_number(machine, self.pending), 1)
 
     def test_failed_cancellation_retains_ownership_until_replacement(self):
         for push_failure, status in ((True, 0), (False, 2), (False, 0)):
@@ -290,7 +328,7 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
                 device.status = 0
                 write_number(machine, self.active, 0)
                 IMAGE.call(machine, 'VDD_DblBuf_Complete')
-                self.assertEqual(read_number(machine, self.timer_pending), 0)
+                self.assertEqual(read_number(machine, self.timer_pending), 2)
                 self.assertEqual(read_number(machine, self.pending), 0)
                 self.assertEqual(device.submissions(), 1)
 
@@ -314,10 +352,10 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
 
     def test_stop_and_setup_cancel_without_losing_failed_ownership(self):
         for function in ('VDD_DblBuf_Stop', 'VDD_DblBuf_Setup'):
-            for push_failure in (False, True):
-                with self.subTest(function=function, push_failure=push_failure):
+            for owned, push_failure in ((1, False), (1, True), (2, False), (2, True)):
+                with self.subTest(function=function, owned=owned, push_failure=push_failure):
                     machine = self.host_machine()
-                    write_number(machine, self.timer_pending, 1)
+                    write_number(machine, self.timer_pending, owned)
                     write_number(machine, self.pending, 1)
                     device = IntegrationDevice(machine, push_failure=push_failure)
                     instructions = IMAGE.function(function, 40)
@@ -331,7 +369,8 @@ class HostPublication(GenericCopyFixture, unittest.TestCase):
 
                     machine.hook_add(UC_HOOK_CODE, boundary)
                     IMAGE.call(machine, function)
-                    self.assertEqual(read_number(machine, self.timer_pending), int(push_failure))
+                    self.assertEqual(read_number(machine, self.timer_pending),
+                                     owned if push_failure else 0)
                     if function == 'VDD_DblBuf_Stop':
                         self.assertEqual(read_number(machine, self.pending), 0)
                     self.assertEqual(device.events.count(('out', 0x2a, 1, 0x21)),
