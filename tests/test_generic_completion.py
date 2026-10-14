@@ -60,7 +60,7 @@ class GenericCompletion(GenericCopyFixture, unittest.TestCase):
                 write_number(machine, self.pending, pending)
                 write_number(machine, self.active, depth)
                 write_number(machine, self.running, running, 4)
-                write_number(machine, self.shared + 16404, 0xa55a)
+                write_number(machine, self.shared + 16404, 0)
                 copies = []
 
                 def boundary(cpu, address, size, unused):
@@ -82,7 +82,7 @@ class GenericCompletion(GenericCopyFixture, unittest.TestCase):
                 should_copy = bool(pending and not depth and running)
                 self.assertEqual(len(copies), int(should_copy))
                 self.assertEqual(read_number(machine, self.pending), int(bool(pending and depth)))
-                self.assertEqual(read_number(machine, self.shared + 16404), 0xa55a)
+                self.assertEqual(read_number(machine, self.shared + 16404), 0)
                 if should_copy:
                     self.assertEqual(bytes(machine.mem_read(0x300000, 4)), expected)
                     IMAGE.call(machine, 'VDD_DblBuf_Complete')

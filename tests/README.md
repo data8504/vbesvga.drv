@@ -46,3 +46,15 @@ while BeginAccess remains held across multiple updates, and exit/restart Windows
 Keep resolution, color depth and CPU budget identical between baseline and
 candidate recordings. Instruction-level tests do not establish compatibility
 with every Windows version or physical adapter.
+
+The optional host publisher can be checked independently:
+
+```
+python3 tests/test_host_publication.py --binary /path/to/VDDVBE.386 --map /path/to/VDDVGA.MAP
+```
+
+This covers transport status and latch balancing, timer versus completed-text
+ownership, outer versus nested begin, failed cancellation and replacement,
+repeated fallback invalidation after a late host commit, and stop/setup
+boundaries. The existing generic tests run with host opt-in zero. The VDD
+extension is dormant until a display driver explicitly enables it.
