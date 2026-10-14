@@ -45,7 +45,12 @@ VDDCursorSel	dw ?
 ; New VDDs append a drawing nesting count to the shared cursor data.
 DrawingStateSel	dw 0
 DrawingCompletionSel dw 0
+; Present only when the VDD supports timer-snapshot revocation service 4.
+DrawingBeginSel dw 0
+public EnableHostPublish
+EnableHostPublish dw 0
 VDD_PUBLISH_PENDING EQU 16406
+VDD_TIMER_SNAPSHOT_PENDING EQU 16408
 DrawingActive	dw 0
 ; this one should always point at what is currently being
 ; drawn on the screen (either the back buffer or VRAM), or
@@ -127,7 +132,10 @@ dblbuf_begin_draw proc near
 	mov	ax,[DrawingActive]
 	inc	ax
 	call	dblbuf_set_drawing
-	pop	ax
+	cmp	ax,1
+	jne	short @F
+	call	dblbuf_revoke_timer
+@@:	pop	ax
 	ret
 dblbuf_begin_draw endp
 
@@ -174,6 +182,39 @@ dcp_done:
 	popf
 	ret
 dblbuf_complete_pending endp
+
+; Before an outer draw changes the back buffer, revoke only a pending
+; timer-owned host snapshot. Completed-text snapshots remain publishable.
+public dblbuf_revoke_timer
+dblbuf_revoke_timer proc near
+	assumes ds,Data
+	pushf
+	push es
+	push ax
+	mov ax,[DrawingBeginSel]
+	test ax,ax
+	jz short drt_done
+	mov es,ax
+	cmp word ptr es:[VDD_TIMER_SNAPSHOT_PENDING],0
+	je short drt_done
+	.386
+	pushad
+	push ds
+	push fs
+	push gs
+	mov ax,4
+	call [VDDDBEntry]
+	pop gs
+	pop fs
+	pop ds
+	popad
+	.286
+drt_done:
+	pop ax
+	pop es
+	popf
+	ret
+dblbuf_revoke_timer endp
 
 dblbuf_set_drawing proc near
 	assumes ds,Data
@@ -721,6 +762,7 @@ cBegin
 	pushf	; preserve the existing success/fallback decision
 	mov	[DrawingStateSel],0
 	mov	[DrawingCompletionSel],0
+	mov	[DrawingBeginSel],0
 	; LSL is encoded explicitly for the original MASM toolchain.
 	db	0Fh,03h,0D0h	; lsl dx,ax
 	jnz	short @F
@@ -730,11 +772,24 @@ cBegin
 	cmp	dx,si
 	jb	short @F
 	mov	[DrawingStateSel],ax
-	; Leave the intervening reserved extension WORD untouched.
-	add	si,4
+	; Opt-in is separate from generic completed-text publication.
+	add	si,2
+	cmp	dx,si
+	jb	short @F
+	push	es
+	mov	es,ax
+	dec	si
+	mov	bx,[EnableHostPublish]
+	mov	es:[si],bx
+	pop	es
+	add	si,3
 	cmp	dx,si
 	jb	short @F
 	mov	[DrawingCompletionSel],ax
+	add	si,2
+	cmp	dx,si
+	jb	short @F
+	mov	[DrawingBeginSel],ax
 @@:	popf
 	; set linear address of VRAM (NOT back buffer since we're not ready
 	; to write to it yet!)

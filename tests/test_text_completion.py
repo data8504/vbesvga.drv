@@ -98,7 +98,8 @@ class TextCompletion(unittest.TestCase):
                                   DRIVER.CODE_BASE + end.address + end.size, count=100)
                 self.assertEqual(read_number(machine, DRIVER.DATA_BASE + self.selector),
                                  0x3000 if limit >= 16407 else 0)
-                self.assertEqual(read_number(machine, DRIVER.SHARED_BASE + 16404), 0xaaaa)
+                self.assertEqual(read_number(machine, DRIVER.SHARED_BASE + 16404),
+                                 0 if limit >= 16405 else 0xaaaa)
 
     def test_only_text_surviving_quick_clipping_reaches_completion(self):
         segment, wrapper = DRIVER.symbols['complete_text_draw']

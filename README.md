@@ -337,6 +337,28 @@ surface access. Applications can still construct a window through several
 separate drawing primitives. The [double-buffering interface](docs/double-buffering.md)
 describes the driver/VDD completion extension.
 
+#### DOSBox integration frame publication
+
+A DOSBox build implementing the [frame-publication protocol](docs/dosbox-publication.md)
+can publish owned snapshots directly from the back buffer. This avoids emulated
+CPU work comparing the full display and writing changed pixels through video
+memory. It supports packed 8-bit linear modes in 386 Enhanced Mode with double
+buffering enabled.
+
+Enable it explicitly in `SYSTEM.INI`:
+
+```ini
+[vbesvga.drv]
+DOSBoxPublish=1
+```
+
+The default is disabled. Missing or unsupported host support retains generic
+publication, including completed-text catch-up. Use the matching display driver
+and VDD to enable timer-snapshot revocation at the next outer drawing begin;
+completed-text snapshots remain publishable while the next operation draws.
+This coalesces primitive updates, without defining whole-application transactions.
+CPU cycles, color depth and `SwapBuffersInterval` need no changes.
+
 If you suspect there are problems with Double Buffering, you can force-disable it by setting `SwapBuffersInterval=0`. This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
 
 Note that the DCI Provider (which is a [minimum implementation](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM)), used by Video for Windows and certain games, only works in linear modes. The VxD `DVA.386` (or `VFLATD` on Win9x) does provide a mechanism to make a bank-switched framebuffer look like a linear one for DCI, but this only works when the driver provides a snippet of 32-bit code to switch the bank. `VBESVGA.DRV` is not in a position to do this, since it does bank switching by calling out to a 16-bit function provided by the Video BIOS.

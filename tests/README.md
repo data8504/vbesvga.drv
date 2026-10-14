@@ -58,3 +58,14 @@ ownership, outer versus nested begin, failed cancellation and replacement,
 repeated fallback invalidation after a late host commit, and stop/setup
 boundaries. The existing generic tests run with host opt-in zero. The VDD
 extension is dormant until a display driver explicitly enables it.
+
+The opt-in client and outer-begin notification use this additional test:
+
+```
+python3 tests/test_begin_notification.py --driver /path/to/VBESVGA.DRV --driver-map /path/to/VBESVGA.MAP --vdd /path/to/VDDVBE.386 --vdd-map /path/to/VDDVGA.MAP
+```
+
+It executes negotiated limits through16409, verifies old-VDD and no-pending
+paths, checks complete caller-state preservation, and bridges the actual
+outer/nested 16-bit drawing client to VDD cancellation and text replacement.
+The generic text-completion tests continue to apply with the opt-in field zero.
