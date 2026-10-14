@@ -65,6 +65,11 @@ Shared_Cursor_Data	STRUC
 
 	; flags, used to specify whether or not to draw the cursor
 	cursor_flags	DW ?
+	; Appended: old display drivers keep their existing cursor layout.
+	drawing_active	DW 0
+	; Reserved extension WORD; not accessed by the generic publisher.
+	reserved_extension DW 0
+	publish_pending DW 0
 Shared_Cursor_Data	ENDS
 
 ; we can expose a copy of this structure to userspace via a small LDT segment
@@ -111,7 +116,16 @@ VxD_LOCKED_CODE_SEG
 ;
 ;==============================================================================
 BeginProc VDD_SwapBuffers,High_Freq
+	cmp	[SharedCurSeg.drawing_active],0
+	je	short @@idle
+	cmp	[Vid_SB_Timeout],0
+	je	short @@done
+	mov	[SharedCurSeg.publish_pending],1
+	jmp	short @@done
+@@idle:
+	mov	[SharedCurSeg.publish_pending],0
 	call	VDD_CopyBuffers
+@@done:
 	call	VDD_Schedule_SwapBuffers
 	ret
 EndProc VDD_SwapBuffers
@@ -306,6 +320,23 @@ BeginProc VDD_Schedule_SwapBuffers,High_Freq
 	ret
 EndProc VDD_Schedule_SwapBuffers
 
+; Service one request missed during a GDI primitive. Nested child text exits
+; leave it pending; the outermost completed text consumes it exactly once.
+BeginProc VDD_DblBuf_Complete, PUBLIC
+	pushad
+	cmp	[SharedCurSeg.publish_pending],0
+	je	short cp_done
+	cmp	[SharedCurSeg.drawing_active],0
+	jne	short cp_done
+	mov	[SharedCurSeg.publish_pending],0
+	cmp	[Vid_SB_Timeout],0
+	je	short cp_done
+	call	VDD_CopyBuffers
+cp_done:
+	popad
+	ret
+EndProc VDD_DblBuf_Complete
+
 VxD_LOCKED_CODE_ENDS
 
 VxD_CODE_SEG
@@ -333,7 +364,8 @@ EndDoc
 DB_Setup EQU 0
 DB_Start EQU 1
 DB_Stop  EQU 2
-DB_Last  EQU DB_Stop
+DB_Complete EQU 3
+DB_Last  EQU DB_Complete
 
 BeginProc VDD_DblBuf_Service, PUBLIC
 
@@ -356,6 +388,7 @@ DblBuf_JumpTable	LABEL DWORD
 DblBufEntry DB_Setup, VDD_DblBuf_Setup	; Create buffers and selectors
 DblBufEntry DB_Start, VDD_DblBuf_Start	; Start periodic swap-buffers loop
 DblBufEntry DB_Stop, VDD_DblBuf_Stop	; Stop periodic swap-buffers loop
+DblBufEntry DB_Complete, VDD_DblBuf_Complete ; One requested generic copy
 EndProc VDD_DblBuf_Service
 
 
@@ -598,6 +631,7 @@ BeginDoc
 EndDoc
 
 BeginProc VDD_DblBuf_Stop
+	mov	[SharedCurSeg.publish_pending],0
 
 	; check if swap_buffers is actually set to run
 	mov	esi,[Vid_SB_Timeout]

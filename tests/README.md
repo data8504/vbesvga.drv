@@ -25,3 +25,24 @@ python3 tests/test_copy_buffers.py --binary /path/to/VDDVBE.386 --map /path/to/V
 It checks byte/word/dword tails, a complete HD frame, clipped/inverting/opaque
 cursors with one through four bytes per pixel, and register preservation. The
 copier owns no timer; the existing periodic wrapper still schedules its successor.
+
+Completed drawing and generic catch-up use both built components:
+
+```
+python3 tests/test_drawing_guards.py --driver /path/to/VBESVGA.DRV --driver-map /path/to/VBESVGA.MAP --vdd /path/to/VDDVBE.386 --vdd-map /path/to/VDDVGA.MAP
+python3 tests/test_generic_completion.py --binary /path/to/VDDVBE.386 --map /path/to/VDDVGA.MAP
+python3 tests/test_text_completion.py --driver /path/to/VBESVGA.DRV --driver-map /path/to/VBESVGA.MAP --vdd /path/to/VDDVBE.386 --vdd-map /path/to/VDDVGA.MAP
+```
+
+These check recursive drawing, older shared selectors, actual selector-limit
+comparison/branch/store paths, Standard Mode swap suppression, DCI cursor-only
+exclusion, timer ownership, one-shot generic completion and caller-state
+preservation. A bridge runs the actual 16-bit client against its actual 32-bit
+copier. The tests model only OS boundaries such as LSL results and VMM scheduling.
+
+For runtime verification, compare complete Marquee loops with large text,
+large-font edits in a word processor, and application startup. Check DCI video
+while BeginAccess remains held across multiple updates, and exit/restart Windows.
+Keep resolution, color depth and CPU budget identical between baseline and
+candidate recordings. Instruction-level tests do not establish compatibility
+with every Windows version or physical adapter.

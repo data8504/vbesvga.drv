@@ -49,9 +49,10 @@ class ServiceDispatch(unittest.TestCase):
         self.assertEqual(load.mnemonic, 'movzx')
         displacement = load.operands[1].mem.disp
         targets = [symbols[name] for name in (
-            'VDD_DblBuf_Setup', 'VDD_DblBuf_Start', 'VDD_DblBuf_Stop')]
+            'VDD_DblBuf_Setup', 'VDD_DblBuf_Start', 'VDD_DblBuf_Stop',
+            'VDD_DblBuf_Complete')]
 
-        for service in (0, 1, 2, 3, 0xff, 0x100, 0x101, 0x102, 0xffff):
+        for service in (0, 1, 2, 3, 4, 0xff, 0x100, 0x101, 0x102, 0x103, 0x104, 0xffff):
             with self.subTest(service=hex(service)):
                 machine = Uc(UC_ARCH_X86, UC_MODE_32)
                 machine.mem_map(0, 0x20000)
@@ -74,8 +75,8 @@ class ServiceDispatch(unittest.TestCase):
 
                 machine.hook_add(UC_HOOK_CODE, boundary)
                 machine.emu_start(entry + 6, 0x1ff00, count=30)
-                self.assertEqual(reached, [targets[service]] if service < 3 else [])
-                self.assertEqual(len(validations), int(service < 3))
+                self.assertEqual(reached, [targets[service]] if service < 4 else [])
+                self.assertEqual(len(validations), int(service < 4))
 
 
 if __name__ == '__main__':
