@@ -15,3 +15,13 @@ tests check acquired/unacquired cleanup branches and the Polyline stack-failure
 exit. They do not emulate the VMM or GDI, or replace runtime application testing.
 No proprietary binaries, DDK tools or Windows installation are needed to run
 them once the drivers and matching maps have been built.
+
+The generic frame copier has a separate test:
+
+```
+python3 tests/test_copy_buffers.py --binary /path/to/VDDVBE.386 --map /path/to/VDDVGA.MAP
+```
+
+It checks byte/word/dword tails, a complete HD frame, clipped/inverting/opaque
+cursors with one through four bytes per pixel, and register preservation. The
+copier owns no timer; the existing periodic wrapper still schedules its successor.

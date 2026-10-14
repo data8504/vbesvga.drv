@@ -111,11 +111,19 @@ VxD_LOCKED_CODE_SEG
 ;
 ;==============================================================================
 BeginProc VDD_SwapBuffers,High_Freq
+	call	VDD_CopyBuffers
+	call	VDD_Schedule_SwapBuffers
+	ret
+EndProc VDD_SwapBuffers
 
-	pushad	; we will use all the 386 registers!
+; Copy one complete generic frame without owning or rescheduling its timer.
+BeginProc VDD_CopyBuffers,High_Freq
+	pushad
 	push	es
 	push	fs
 	push	gs
+	; Timer callbacks supply EDX; protected completion clients do not.
+	mov	edx,[Vid_BBuf_Size]
 
 	; We will use the registers like so:
 	; EAX = Current dword of graphics data (or word of cursor data)
@@ -221,7 +229,7 @@ BeginProc VDD_SwapBuffers,High_Freq
 
 @@:	; copy loop done - any cursor scanlines left?
 	test	bh,bh
-	jz	short @@done
+	jz	short copy_done
 
 	; right, switch over to loading the cursor data
 	; 16-bit source address and counter registers are sufficient for this!
@@ -262,16 +270,14 @@ BeginProc VDD_SwapBuffers,High_Freq
 	sub	ecx,edi
 	jnz	@@copy_loop
 
-@@done:	pop	gs
+copy_done:
+	pop	gs
 	pop	fs
 	pop	es
 	assume	es:FLAT
 	popad
-
-	; schedule the next call
-	call	VDD_Schedule_SwapBuffers
 	ret
-EndProc VDD_SwapBuffers
+EndProc VDD_CopyBuffers
 
 ;******************************************************************************
 ;VDD_Schedule_SwapBuffers
