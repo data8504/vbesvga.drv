@@ -1,13 +1,17 @@
-# Assembled-code regression test
+# Assembled-code regression tests
 
-Build `VDDVBE.386` using the DDK procedure in the main README, retaining its
-matching `VDDVGA.MAP`. Install Python 3, `capstone` and `unicorn`, then run:
+Build the drivers using the DDK procedures in the main README and retain their
+matching linker maps. Tests require Python 3, `capstone` and `unicorn`:
 
 ```
 python3 tests/test_service_dispatch.py --binary /path/to/VDDVBE.386 --map /path/to/VDDVGA.MAP
+python3 tests/test_exclusion.py --binary /path/to/VBESVGA.DRV --map /path/to/VBESVGA.MAP
 ```
 
-The test executes the built dispatcher, with a successful VMM validation call
-at its OS boundary, and checks both valid destinations and invalid full-width
-service numbers. It needs no Windows installation or proprietary tools beyond
-those used for the documented build. It does not emulate the VMM itself.
+The tests execute instructions from your built binaries. The dispatcher test
+models a successful VMM validation call at its OS boundary and checks valid
+service destinations and invalid full-width service numbers. The exclusion
+tests check acquired/unacquired cleanup branches and the Polyline stack-failure
+exit. They do not emulate the VMM or GDI, or replace runtime application testing.
+No proprietary binaries, DDK tools or Windows installation are needed to run
+them once the drivers and matching maps have been built.
