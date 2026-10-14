@@ -70,7 +70,7 @@ WORD at16404 and appends one further field:
 | 16402 | GDI drawing nesting count | 16403 |
 | 16404 | Host publication opt-in | 16405 |
 | 16406 | Pending completion request | 16407 |
-| 16408 | Timer-owned snapshot pending | 16409 |
+| 16408 | Snapshot ownership (0 ordinary, 1 timer, 2 completed text) | 16409 |
 
 The driver checks selector limits before accessing extensions or calling the
 new service. Existing drivers leave the opt-in zero, so adding the VDD alone
@@ -79,12 +79,14 @@ new AX4 service. Generic completion remains available independently of host
 support or configuration.
 
 Periodic and text-completion paths call the same publisher. Accepted periodic
-snapshots set the timer-owned flag; accepted completed-text snapshots clear it.
-At a new outermost GDI begin (depth1), AX4 can cancel a timer-owned snapshot
-still pending in the host and rearm one completion request. Nested begins do
-not cancel, and completed-text snapshots survive the next drawing begin. This
-coalesces primitive updates without discarding every animation frame while the
-next one is being drawn. It is not an application transaction boundary and
+snapshots are timer-owned unless they refresh a completed-text snapshot before
+its next outer drawing begin. Completed-text ownership survives those refreshes:
+otherwise a timer could replace a completed snapshot and make it revocable
+before the host presents it. At the first outermost GDI begin (depth1), AX4
+consumes completed-text ownership without cancellation. A timer-owned snapshot
+is instead cancelled, rearming one completion request. Nested begins do not
+consume ownership or cancel snapshots. This coalesces primitive updates without
+discarding every animation frame while the next one is being drawn. It is not an application transaction boundary and
 cannot undo an image the host already committed.
 
 Cancellation preserves the last committed display and touches only the pending
